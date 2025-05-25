@@ -18,7 +18,7 @@ app = FastAPI()
 class TaskCreate(BaseModel):
     title: str
     description: str = None
-    completed: bool = False
+    user_id: int
 
 class UserCreate(BaseModel):
     email: str
@@ -40,22 +40,33 @@ app.add_middleware(
     allow_headers=["*"], 
 )
 
-@app.api_route("/tasks/", methods=["GET", "POST"])
-def tasks_route(task: TaskCreate = None, db: Session = Depends(get_db)):
+@app.post("/tasks/")
+def tasks_route(task: TaskCreate, db: Session = Depends(get_db)):
     if task: 
         print(task.title)
         print(task.description)
-        db_task = Task(title=task.title, description=task.description, completed=False)
+        print(task.user_id)
+        db_task = Task(title=task.title, description=task.description, user_id=task.user_id, completed=False)
         db.add(db_task)
         db.commit()
         db.refresh(db_task)
         return db_task
-    else: 
-        tasks = db.query(Task).all()
-        print(tasks)
-        return tasks
     
-@app.post("/users/")
+@app.get("/tasks/")
+def get_tasks(user_id: int, db: Session = Depends(get_db)):
+    tasks = db.query(Task).filter(Task.user_id == user_id).all()
+    return tasks
+
+@app.delete("/tasks/{task_id}")
+def delete_task(task_id: int, db: Session = Depends(get_db)):
+    task = db.query(Task).filter(Task.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    db.delete(task)
+    db.commit()
+    return {"message": "Task deleted successfully"}
+
+@app.post("/register/")
 def create_user(user: UserCreate, db: Session = Depends(get_db)):
         existing_user = db.query(User).filter(User.email == user.email).first()
         if existing_user:
@@ -67,4 +78,15 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(new_user)
         return new_user
+
+@app.post("/login/")
+def login(data: UserCreate, db: Session = Depends(get_db)):
+    existing_user = db.query(User).filter(User.email == data.email).first()
+    if not existing_user:
+        raise HTTPException(status_code=400, detail="User not found")
+    if not pwd_context.verify(data.password, existing_user.hashed_password):
+        raise HTTPException(status_code=400, detail="Wrong password")
+    return existing_user
+    
+        
 
